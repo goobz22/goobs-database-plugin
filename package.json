@@ -1,9 +1,13 @@
 {
   "name": "goobs-database-plugin",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "A flexible and extensible multi-database plugin for TypeScript projects, initially featuring MongoDB support. This plugin offers generic CRUD operations with company and user segregation, type-safe document handling, automatic metadata tracking, and built-in connection management. Designed for scalability, it provides a foundation for adding support for multiple database types in the future, making it ideal for projects that may need to work with various databases or switch between them seamlessly.",
-  "main": "src/mongodb/index.ts",
-  "types": "src/mongodb/index.ts",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./mongodb": "./src/mongodb/index.ts"
+  },
   "scripts": {
     "build": "yarn lint && yarn typecheck && yarn pretty",
     "typecheck": "tsc --noEmit",
