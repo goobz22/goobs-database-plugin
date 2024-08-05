@@ -1,0 +1,64 @@
+{
+  "name": "goobs-database-plugin",
+  "version": "0.1.0",
+  "description": "A flexible and extensible multi-database plugin for TypeScript projects, initially featuring MongoDB support. This plugin offers generic CRUD operations with company and user segregation, type-safe document handling, automatic metadata tracking, and built-in connection management. Designed for scalability, it provides a foundation for adding support for multiple database types in the future, making it ideal for projects that may need to work with various databases or switch between them seamlessly.",
+  "main": "src/mongodb/index.ts",
+  "types": "src/mongodb/index.ts",
+  "scripts": {
+    "build": "yarn lint && yarn typecheck && yarn pretty",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint . --ext .ts,.tsx",
+    "lint:fix": "eslint . --ext .ts,.tsx --fix",
+    "pretty": "prettier --write \"src/**/*.{ts,tsx}\"",
+    "prepublishOnly": "yarn build",
+    "publish-package": "npm publish",
+    "test": "jest"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "mongoose": "^8.5.2",
+    "winston": "^3.13.1"
+  },
+  "devDependencies": {
+    "@typescript-eslint/eslint-plugin": "^8.0.0",
+    "@typescript-eslint/parser": "^8.0.0",
+    "eslint": "^8.7.0",
+    "eslint-config-prettier": "^9.1.0",
+    "eslint-plugin-jest": "^28.7.0",
+    "eslint-plugin-prettier": "^5.2.1",
+    "eslint-plugin-react": "^7.35.0",
+    "eslint-plugin-react-hooks": "^4.6.2",
+    "jest": "^29.7.0",
+    "prettier": "^3.3.3",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "typescript": "^5.5.4"
+  },
+  "files": [
+    "src"
+  ],
+  "keywords": [
+    "database",
+    "plugin",
+    "mongodb",
+    "multi-database",
+    "typescript",
+    "orm",
+    "crud",
+    "nosql",
+    "mongoose",
+    "extensible",
+    "scalable",
+    "generic",
+    "type-safe",
+    "connection-management",
+    "metadata-tracking",
+    "multi-tenant"
+  ],
+  "author": "Matthew Goluba",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/goobz22/goobs-cache"
+  }
+}
