@@ -34,7 +34,10 @@ const logger = createLogger({
   ],
 })
 
-export async function updateItemInMongo<T extends Document, S extends BaseSerializableData>(
+export async function updateItemInMongo<
+  T extends Document,
+  S extends BaseSerializableData,
+>(
   companyId: string,
   userId: string,
   mongoModelName: string,
@@ -79,11 +82,11 @@ export async function updateItemInMongo<T extends Document, S extends BaseSerial
     if (onChangeCallback) {
       logger.debug('Setting up change stream', { mongoModelName })
       changeStream = Model.watch(pipeline, { fullDocument: 'updateLookup' })
-      changeStream.on('change', async (change) => {
+      changeStream.on('change', async change => {
         logger.debug('Change detected', { change })
         onChangeCallback(change)
       })
-      changeStream.on('error', (error) => {
+      changeStream.on('error', error => {
         logger.error('Change stream error', { error })
       })
       logger.debug('Change stream set up', { mongoModelName })

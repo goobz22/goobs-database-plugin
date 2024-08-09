@@ -54,7 +54,9 @@ export async function getFromMongo<
     filter?: Record<string, unknown>
     cachedData?: GenericSerializableData<S>[]
     getUpdatedAt?: (item: GenericSerializableData<S>) => Date
-    onDataChange?: (data: GenericSerializableData<S>[] | GenericSerializableData<S> | null) => void
+    onDataChange?: (
+      data: GenericSerializableData<S>[] | GenericSerializableData<S> | null
+    ) => void
     pipeline?: Record<string, unknown>[]
   } = {}
 ): Promise<{
@@ -62,7 +64,14 @@ export async function getFromMongo<
   isStale: boolean
   changeStream: ChangeStream | null
 }> {
-  const { itemId, filter = {}, cachedData, getUpdatedAt, onDataChange, pipeline = [] } = options
+  const {
+    itemId,
+    filter = {},
+    cachedData,
+    getUpdatedAt,
+    onDataChange,
+    pipeline = [],
+  } = options
 
   logger.debug('Entering getFromMongo function', {
     companyId,
@@ -171,19 +180,27 @@ export async function getFromMongo<
 
     // Set up change stream
     if (onDataChange) {
-      changeStream = collection.watch(pipeline, { fullDocument: 'updateLookup' })
-      changeStream.on('change', async (change) => {
+      changeStream = collection.watch(pipeline, {
+        fullDocument: 'updateLookup',
+      })
+      changeStream.on('change', async change => {
         logger.debug('Change detected', { change })
-        
+
         // Fetch updated data
         const updatedDocuments = await collection.find(fullFilter).toArray()
         const updatedSerializedDocuments = updatedDocuments.map(doc =>
           serializeDocument<T, S>(doc as unknown as GenericDocument<T>)
         )
-        
-        let updatedResult: GenericSerializableData<S>[] | GenericSerializableData<S> | null
+
+        let updatedResult:
+          | GenericSerializableData<S>[]
+          | GenericSerializableData<S>
+          | null
         if (itemId) {
-          updatedResult = updatedSerializedDocuments.length > 0 ? updatedSerializedDocuments[0] : null
+          updatedResult =
+            updatedSerializedDocuments.length > 0
+              ? updatedSerializedDocuments[0]
+              : null
         } else {
           updatedResult = updatedSerializedDocuments
         }
@@ -191,7 +208,7 @@ export async function getFromMongo<
         onDataChange(updatedResult)
       })
 
-      changeStream.on('error', (error) => {
+      changeStream.on('error', error => {
         logger.error('Change stream error', { error })
       })
     }

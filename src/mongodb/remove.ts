@@ -70,7 +70,11 @@ export async function removeFromMongo<T extends Document>(
 
     if (onChangeCallback) {
       logger.debug('Setting up change stream', { mongoModelName })
-      changeStream = await setupChangeStream(mongoModelName, [], onChangeCallback)
+      changeStream = await setupChangeStream(
+        mongoModelName,
+        [],
+        onChangeCallback
+      )
       logger.debug('Change stream set up', { mongoModelName })
     }
 

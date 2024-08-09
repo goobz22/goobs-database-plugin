@@ -95,13 +95,16 @@ async function setupChangeStream(
 
   changeStream = collection.watch(pipeline)
 
-  changeStream.on('change', (change) => {
+  changeStream.on('change', change => {
     logger.info(`Change detected in collection ${collectionName}:`, change)
     onChangeCallback(change)
   })
 
-  changeStream.on('error', (error) => {
-    logger.error(`Error in change stream for collection ${collectionName}:`, error)
+  changeStream.on('error', error => {
+    logger.error(
+      `Error in change stream for collection ${collectionName}:`,
+      error
+    )
   })
 
   logger.info(`Change stream set up for collection ${collectionName}`)
@@ -118,7 +121,9 @@ export default async function ConnectDb(
       return await connectMongoose()
     case 'watch':
       if (!changeStream) {
-        throw new Error('Change stream not set up. Use setupChangeStream first.')
+        throw new Error(
+          'Change stream not set up. Use setupChangeStream first.'
+        )
       }
       return changeStream
     default:
