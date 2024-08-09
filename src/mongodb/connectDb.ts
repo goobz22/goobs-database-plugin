@@ -1,6 +1,6 @@
 import { config } from 'dotenv'
 import mongoose from 'mongoose'
-import { MongoClient, MongoClientOptions } from 'mongodb'
+import { MongoClient, MongoClientOptions, ChangeStream } from 'mongodb'
 import { createLogger, format, transports } from 'winston'
 
 config({ path: ['.env.local', '.env'] })
@@ -24,6 +24,7 @@ const logger = createLogger({
 
 let mongoClient: MongoClient | null = null
 let mongooseConnection: mongoose.Connection | null = null
+let changeStream: ChangeStream | null = null
 
 function getMongoURI(): string {
   const MONGO_URI = process.env.MONGODB_URI || ''
@@ -76,15 +77,52 @@ async function connectMongoose(): Promise<mongoose.Connection> {
   }
 }
 
+async function setupChangeStream(
+  collectionName: string,
+  pipeline: object[] = [],
+  onChangeCallback: (change: unknown) => void
+): Promise<ChangeStream> {
+  if (!mongoClient) {
+    await connectMongoDB()
+  }
+
+  if (!mongoClient) {
+    throw new Error('Failed to connect to MongoDB')
+  }
+
+  const db = mongoClient.db()
+  const collection = db.collection(collectionName)
+
+  changeStream = collection.watch(pipeline)
+
+  changeStream.on('change', (change) => {
+    logger.info(`Change detected in collection ${collectionName}:`, change)
+    onChangeCallback(change)
+  })
+
+  changeStream.on('error', (error) => {
+    logger.error(`Error in change stream for collection ${collectionName}:`, error)
+  })
+
+  logger.info(`Change stream set up for collection ${collectionName}`)
+  return changeStream
+}
+
 export default async function ConnectDb(
-  operation: 'get' | 'update'
-): Promise<MongoClient | mongoose.Connection> {
-  if (operation === 'get') {
-    return await connectMongoDB()
-  } else if (operation === 'update') {
-    return await connectMongoose()
-  } else {
-    throw new Error('Invalid operation. Use "get" or "update".')
+  operation: 'get' | 'update' | 'watch'
+): Promise<MongoClient | mongoose.Connection | ChangeStream> {
+  switch (operation) {
+    case 'get':
+      return await connectMongoDB()
+    case 'update':
+      return await connectMongoose()
+    case 'watch':
+      if (!changeStream) {
+        throw new Error('Change stream not set up. Use setupChangeStream first.')
+      }
+      return changeStream
+    default:
+      throw new Error('Invalid operation. Use "get", "update", or "watch".')
   }
 }
 
@@ -99,4 +137,11 @@ export async function closeConnections(): Promise<void> {
     mongooseConnection = null
     logger.info('Mongoose connection closed')
   }
+  if (changeStream) {
+    await changeStream.close()
+    changeStream = null
+    logger.info('Change stream closed')
+  }
 }
+
+export { setupChangeStream }
