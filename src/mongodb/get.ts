@@ -8,6 +8,7 @@ import {
   WithId,
   Filter,
   UpdateFilter,
+  ChangeStream,
 } from 'mongodb'
 import ConnectDb, { closeConnections } from './connectDb'
 import {
@@ -53,12 +54,15 @@ export async function getFromMongo<
     filter?: Record<string, unknown>
     cachedData?: GenericSerializableData<S>[]
     getUpdatedAt?: (item: GenericSerializableData<S>) => Date
+    onDataChange?: (data: GenericSerializableData<S>[] | GenericSerializableData<S> | null) => void
+    pipeline?: Record<string, unknown>[]
   } = {}
 ): Promise<{
   data: GenericSerializableData<S>[] | GenericSerializableData<S> | null
   isStale: boolean
+  changeStream: ChangeStream | null
 }> {
-  const { itemId, filter = {}, cachedData, getUpdatedAt } = options
+  const { itemId, filter = {}, cachedData, getUpdatedAt, onDataChange, pipeline = [] } = options
 
   logger.debug('Entering getFromMongo function', {
     companyId,
@@ -69,6 +73,7 @@ export async function getFromMongo<
   })
 
   let client: MongoClient | null = null
+  let changeStream: ChangeStream | null = null
   try {
     client = (await ConnectDb('get')) as MongoClient
     logger.debug('MongoDB connection established')
@@ -112,6 +117,7 @@ export async function getFromMongo<
         return {
           data: itemId ? cachedData[0] || null : cachedData,
           isStale,
+          changeStream: null,
         }
       }
     }
@@ -163,9 +169,37 @@ export async function getFromMongo<
 
     logger.debug('Final result', { result, resultType: typeof result })
 
+    // Set up change stream
+    if (onDataChange) {
+      changeStream = collection.watch(pipeline, { fullDocument: 'updateLookup' })
+      changeStream.on('change', async (change) => {
+        logger.debug('Change detected', { change })
+        
+        // Fetch updated data
+        const updatedDocuments = await collection.find(fullFilter).toArray()
+        const updatedSerializedDocuments = updatedDocuments.map(doc =>
+          serializeDocument<T, S>(doc as unknown as GenericDocument<T>)
+        )
+        
+        let updatedResult: GenericSerializableData<S>[] | GenericSerializableData<S> | null
+        if (itemId) {
+          updatedResult = updatedSerializedDocuments.length > 0 ? updatedSerializedDocuments[0] : null
+        } else {
+          updatedResult = updatedSerializedDocuments
+        }
+
+        onDataChange(updatedResult)
+      })
+
+      changeStream.on('error', (error) => {
+        logger.error('Change stream error', { error })
+      })
+    }
+
     return {
       data: result,
       isStale,
+      changeStream,
     }
   } catch (error) {
     logger.error('Error in getFromMongo', {
@@ -182,6 +216,11 @@ export async function getFromMongo<
       logger.debug('Closing MongoDB connections')
       await closeConnections()
       logger.debug('MongoDB connections closed')
+    }
+    if (changeStream) {
+      logger.debug('Closing change stream')
+      await changeStream.close()
+      logger.debug('Change stream closed')
     }
   }
 }

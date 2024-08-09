@@ -1,7 +1,8 @@
 'use server'
 import { createLogger, format, transports } from 'winston'
-import mongoose, { Schema } from 'mongoose'
-import ConnectDb, { closeConnections } from './connectDb'
+import mongoose, { Schema, Document } from 'mongoose'
+import { ChangeStream } from 'mongodb'
+import ConnectDb, { closeConnections, setupChangeStream } from './connectDb'
 import { GenericDocument } from './types'
 
 const logger = createLogger({
@@ -28,13 +29,14 @@ const logger = createLogger({
   ],
 })
 
-export async function removeFromMongo<T>(
+export async function removeFromMongo<T extends Document>(
   companyId: string,
   userId: string,
   identifier: string,
   mongoModelName: string,
   schema: Schema<GenericDocument<T>>,
-  additionalFilter: Record<string, unknown> = {}
+  additionalFilter: Record<string, unknown> = {},
+  onChangeCallback?: (change: unknown) => void
 ): Promise<boolean> {
   logger.debug('Entering removeFromMongo function', {
     companyId,
@@ -46,6 +48,7 @@ export async function removeFromMongo<T>(
   })
 
   let connection: mongoose.Connection | null = null
+  let changeStream: ChangeStream | null = null
   try {
     logger.debug('Calling ConnectDb to establish MongoDB connection', {
       connectionType: 'update',
@@ -64,6 +67,12 @@ export async function removeFromMongo<T>(
       mongoModelName,
       schemaName: schema.obj.constructor.name,
     })
+
+    if (onChangeCallback) {
+      logger.debug('Setting up change stream', { mongoModelName })
+      changeStream = await setupChangeStream(mongoModelName, [], onChangeCallback)
+      logger.debug('Change stream set up', { mongoModelName })
+    }
 
     const filter = {
       _id: new mongoose.Types.ObjectId(identifier),
@@ -128,6 +137,11 @@ export async function removeFromMongo<T>(
     })
     throw error
   } finally {
+    if (changeStream) {
+      logger.debug('Closing change stream', { mongoModelName })
+      await changeStream.close()
+      logger.debug('Change stream closed', { mongoModelName })
+    }
     if (connection) {
       logger.debug('Closing MongoDB connections', {
         connectionType: 'update',

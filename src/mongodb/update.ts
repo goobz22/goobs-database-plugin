@@ -1,6 +1,7 @@
 'use server'
 import { createLogger, format, transports } from 'winston'
-import mongoose, { Schema } from 'mongoose'
+import mongoose, { Schema, Document } from 'mongoose'
+import { ChangeStream } from 'mongodb'
 import ConnectDb, { closeConnections } from './connectDb'
 import {
   GenericDocument,
@@ -33,13 +34,15 @@ const logger = createLogger({
   ],
 })
 
-export async function updateItemInMongo<T, S extends BaseSerializableData>(
+export async function updateItemInMongo<T extends Document, S extends BaseSerializableData>(
   companyId: string,
   userId: string,
   mongoModelName: string,
   schema: Schema,
   itemData: Partial<T> & { _id?: string },
-  validateFields: (data: Partial<T>) => void
+  validateFields: (data: Partial<T>) => void,
+  onChangeCallback?: (change: unknown) => void,
+  pipeline: Record<string, unknown>[] = []
 ): Promise<GenericSerializableData<S>> {
   logger.info('Starting updateItemInMongo', {
     companyId,
@@ -53,6 +56,7 @@ export async function updateItemInMongo<T, S extends BaseSerializableData>(
   })
 
   let connection: mongoose.Connection | null = null
+  let changeStream: ChangeStream | null = null
   try {
     logger.debug('Calling ConnectDb to establish MongoDB connection', {
       connectionType: 'update',
@@ -72,10 +76,22 @@ export async function updateItemInMongo<T, S extends BaseSerializableData>(
       schemaName: schema.obj.constructor.name,
     })
 
+    if (onChangeCallback) {
+      logger.debug('Setting up change stream', { mongoModelName })
+      changeStream = Model.watch(pipeline, { fullDocument: 'updateLookup' })
+      changeStream.on('change', async (change) => {
+        logger.debug('Change detected', { change })
+        onChangeCallback(change)
+      })
+      changeStream.on('error', (error) => {
+        logger.error('Change stream error', { error })
+      })
+      logger.debug('Change stream set up', { mongoModelName })
+    }
+
     logger.debug('Validating required fields', {
       itemDataKeys: Object.keys(itemData),
     })
-    // Validate required fields
     validateFields(itemData)
     logger.debug('Required fields validated successfully', {
       itemDataKeys: Object.keys(itemData),
@@ -143,7 +159,6 @@ export async function updateItemInMongo<T, S extends BaseSerializableData>(
     logger.debug('Incrementing setHitCount for updated document', {
       _id: updatedDoc._id,
     })
-    // Increment setHitCount
     await Model.updateOne({ _id: updatedDoc._id }, { $inc: { setHitCount: 1 } })
     logger.debug('setHitCount incremented successfully', {
       _id: updatedDoc._id,
@@ -152,7 +167,6 @@ export async function updateItemInMongo<T, S extends BaseSerializableData>(
     logger.debug('Verifying updated document in the database', {
       _id: updatedDoc._id,
     })
-    // Verify the data is in the database
     const verifiedDoc = await Model.findById(updatedDoc._id)
     logger.debug('Final verification', {
       exists: !!verifiedDoc,
@@ -195,6 +209,11 @@ export async function updateItemInMongo<T, S extends BaseSerializableData>(
       throw new Error('An unknown error occurred')
     }
   } finally {
+    if (changeStream) {
+      logger.debug('Closing change stream', { mongoModelName })
+      await changeStream.close()
+      logger.debug('Change stream closed', { mongoModelName })
+    }
     if (connection) {
       logger.debug('Closing MongoDB connections', {
         connectionType: 'update',
