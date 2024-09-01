@@ -8,27 +8,10 @@ import { removeFromMongo } from './remove'
 import { updateItemInMongo } from './update'
 
 // Importing from types.ts
-import type {
-  BaseDocument,
-  BaseSerializableData,
-  WithCompanyAndUser,
-  GenericDocument,
-  GenericSerializableData,
-} from './types'
-
-import { createGenericSchema, serializeDocument } from './types'
+import type { ChangeStreamOperationType, Identifier } from './types'
 
 // Exporting all imported items
 export { getFromMongo, removeFromMongo, updateItemInMongo }
 
 // Exporting types
-export type {
-  BaseDocument,
-  BaseSerializableData,
-  WithCompanyAndUser,
-  GenericDocument,
-  GenericSerializableData,
-}
-
-// Exporting functions
-export { createGenericSchema, serializeDocument }
+export type { ChangeStreamOperationType, Identifier }
