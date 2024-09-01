@@ -1,9 +1,12 @@
 'use server'
 import { createLogger, format, transports } from 'winston'
-import mongoose, { Schema, Document } from 'mongoose'
-import { ChangeStream } from 'mongodb'
-import ConnectDb, { closeConnections, setupChangeStream } from './connectDb'
-import { GenericDocument } from './types'
+import mongoose, { Schema, Model, Document } from 'mongoose'
+import { ChangeStream, ObjectId } from 'mongodb'
+import ConnectDb, {
+  closeConnections,
+  setupChangeStream,
+} from './utils/connectDb'
+import { Identifier } from './types'
 
 const logger = createLogger({
   level: 'debug',
@@ -29,22 +32,15 @@ const logger = createLogger({
   ],
 })
 
-export async function removeFromMongo<T extends Document>(
-  companyId: string,
-  userId: string,
-  identifier: string,
-  mongoModelName: string,
-  schema: Schema<GenericDocument<T>>,
-  additionalFilter: Record<string, unknown> = {},
-  onChangeCallback?: (change: unknown) => void
-): Promise<boolean> {
+export const removeFromMongo = async <T extends Document>(
+  identifier: Identifier,
+  schema: Schema<T>,
+  model: Model<T>
+): Promise<{ success: boolean; changeStream: ChangeStream }> => {
   logger.debug('Entering removeFromMongo function', {
-    companyId,
-    userId,
     identifier,
-    mongoModelName,
-    schemaName: schema.obj.constructor.name,
-    additionalFilterKeys: Object.keys(additionalFilter),
+    schemaName: schema.constructor.name,
+    modelName: model.modelName,
   })
 
   let connection: mongoose.Connection | null = null
@@ -58,94 +54,68 @@ export async function removeFromMongo<T extends Document>(
       connectionType: 'update',
     })
 
-    logger.debug('Creating Mongoose model', {
-      mongoModelName,
-      schemaName: schema.obj.constructor.name,
-    })
-    const Model = connection.model<GenericDocument<T>>(mongoModelName, schema)
-    logger.debug('Mongoose model created', {
-      mongoModelName,
-      schemaName: schema.obj.constructor.name,
-    })
+    logger.debug('Setting up change stream', { modelName: model.modelName })
+    changeStream = await setupChangeStream(model.collection.name, [])
+    logger.debug('Change stream set up', { modelName: model.modelName })
 
-    if (onChangeCallback) {
-      logger.debug('Setting up change stream', { mongoModelName })
-      changeStream = await setupChangeStream(
-        mongoModelName,
-        [],
-        onChangeCallback
-      )
-      logger.debug('Change stream set up', { mongoModelName })
+    const filter: Record<string, ObjectId> = {
+      company: new ObjectId(identifier.companyId),
     }
 
-    const filter = {
-      _id: new mongoose.Types.ObjectId(identifier),
-      company: new mongoose.Types.ObjectId(companyId),
-      user: new mongoose.Types.ObjectId(userId),
-      ...additionalFilter,
+    if ('id' in identifier) {
+      filter._id = new ObjectId(identifier.id)
     }
+
     logger.debug('Delete filter created', {
       filter,
       filterKeys: Object.keys(filter),
     })
 
-    logger.debug('Calling Model.deleteOne with filter', {
+    logger.debug('Calling model.deleteOne with filter', {
       filter,
       filterKeys: Object.keys(filter),
     })
-    const result = await Model.deleteOne(filter)
+    const result = await model.deleteOne(filter)
     logger.debug('deleteOne operation completed', {
       result,
       deletedCount: result.deletedCount,
     })
 
-    const itemRemoved = result.deletedCount > 0
+    const success = result.deletedCount > 0
     logger.info(
-      `removeFromMongo - Removed ${result.deletedCount} document(s) for companyId: ${companyId}, userId: ${userId}, and identifier: ${identifier}`,
+      `removeFromMongo - Removed ${result.deletedCount} document(s) for identifier: ${JSON.stringify(identifier)}`,
       {
         result,
         deletedCount: result.deletedCount,
-        itemRemoved,
+        success,
       }
     )
 
-    if (itemRemoved) {
+    if (success) {
       logger.debug('Item successfully removed', {
-        companyId,
-        userId,
         identifier,
-        mongoModelName,
-        schemaName: schema.obj.constructor.name,
+        modelName: model.modelName,
+        schemaName: schema.constructor.name,
       })
     } else {
       logger.debug('No item found to remove', {
-        companyId,
-        userId,
         identifier,
-        mongoModelName,
-        schemaName: schema.obj.constructor.name,
+        modelName: model.modelName,
+        schemaName: schema.constructor.name,
       })
     }
 
-    return itemRemoved
+    return { success, changeStream }
   } catch (error) {
     logger.error('Error in removeFromMongo', {
       error: error instanceof Error ? error.message : 'Unknown error',
       stack: error instanceof Error ? error.stack : 'No stack trace available',
-      companyId,
-      userId,
       identifier,
-      mongoModelName,
-      schemaName: schema.obj.constructor.name,
-      additionalFilterKeys: Object.keys(additionalFilter),
+      modelName: model.modelName,
+      schemaName: schema.constructor.name,
     })
     throw error
   } finally {
-    if (changeStream) {
-      logger.debug('Closing change stream', { mongoModelName })
-      await changeStream.close()
-      logger.debug('Change stream closed', { mongoModelName })
-    }
     if (connection) {
       logger.debug('Closing MongoDB connections', {
         connectionType: 'update',
@@ -156,12 +126,9 @@ export async function removeFromMongo<T extends Document>(
       })
     }
     logger.debug('Exiting removeFromMongo function', {
-      companyId,
-      userId,
       identifier,
-      mongoModelName,
-      schemaName: schema.obj.constructor.name,
-      additionalFilterKeys: Object.keys(additionalFilter),
+      modelName: model.modelName,
+      schemaName: schema.constructor.name,
     })
   }
 }

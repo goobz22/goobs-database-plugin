@@ -1,22 +1,11 @@
 'use server'
 import { createLogger, format, transports } from 'winston'
-import {
-  MongoClient,
-  ObjectId,
-  Document,
-  Sort,
-  WithId,
-  Filter,
-  UpdateFilter,
-  ChangeStream,
-} from 'mongodb'
-import ConnectDb, { closeConnections } from './connectDb'
-import {
-  GenericSerializableData,
-  BaseSerializableData,
-  serializeDocument,
-  GenericDocument,
-} from './types'
+import { MongoClient, Filter, ChangeStream, ObjectId } from 'mongodb'
+import ConnectDb, { closeConnections } from './utils/connectDb'
+import { Identifier } from './types'
+import { Schema, Model, Document } from 'mongoose'
+import ServerHitCountModule from './utils/get/hitCount.server'
+import ServerLastDateModule from './utils/get/lastAccessedDate.server'
 
 const logger = createLogger({
   level: 'debug',
@@ -42,191 +31,93 @@ const logger = createLogger({
   ],
 })
 
-export async function getFromMongo<
-  T extends Document,
-  S extends BaseSerializableData,
->(
-  companyId: string,
-  userId: string,
-  mongoModelName: string,
-  options: {
-    itemId?: string
-    filter?: Record<string, unknown>
-    cachedData?: GenericSerializableData<S>[]
-    getUpdatedAt?: (item: GenericSerializableData<S>) => Date
-    onDataChange?: (
-      data: GenericSerializableData<S>[] | GenericSerializableData<S> | null
-    ) => void
-    pipeline?: Record<string, unknown>[]
-  } = {}
+export const getFromMongo = async <T extends Document>(
+  identifier: Identifier,
+  schema: Schema<T>,
+  model: Model<T>
 ): Promise<{
-  data: GenericSerializableData<S>[] | GenericSerializableData<S> | null
-  isStale: boolean
-  changeStream: ChangeStream | null
-}> {
-  const {
-    itemId,
-    filter = {},
-    cachedData,
-    getUpdatedAt,
-    onDataChange,
-    pipeline = [],
-  } = options
-
-  logger.debug('Entering getFromMongo function', {
-    companyId,
-    userId,
-    mongoModelName,
-    itemId: itemId || 'all',
-    filter,
-  })
-
+  data: T | T[]
+  changeStream: ChangeStream<T>
+}> => {
+  logger.debug('Entering getFromMongo function', { identifier, schema })
   let client: MongoClient | null = null
-  let changeStream: ChangeStream | null = null
   try {
     client = (await ConnectDb('get')) as MongoClient
     logger.debug('MongoDB connection established')
-
     const db = client.db()
-    const collection = db.collection<T>(mongoModelName)
-
-    const baseFilter: Record<string, unknown> = {
-      company: new ObjectId(companyId),
-      user: new ObjectId(userId),
-    }
-
-    const fullFilter: Filter<T> = {
-      ...baseFilter,
-      ...filter,
-    } as Filter<T>
-
-    if (itemId) {
-      fullFilter._id = new ObjectId(itemId) as unknown as Filter<T>['_id']
-    }
-
-    logger.debug('Find filter created', { fullFilter })
-
-    let isStale = true
-    if (cachedData && cachedData.length > 0 && getUpdatedAt) {
-      const sort: Sort = { updatedAt: -1 }
-      const latestDocument = await collection.findOne(fullFilter, { sort })
-      if (latestDocument) {
-        const latestUpdatedAt = latestDocument.updatedAt as Date
-        const cachedUpdatedAt = getUpdatedAt(cachedData[0])
-        logger.debug('Comparing dates', { latestUpdatedAt, cachedUpdatedAt })
-        isStale = latestUpdatedAt > cachedUpdatedAt
-      }
-
-      logger.info(
-        `Stale status for companyId: ${companyId}, userId: ${userId}`,
-        { isStale }
-      )
-      if (!isStale) {
-        logger.debug('Returning cached data')
-        return {
-          data: itemId ? cachedData[0] || null : cachedData,
-          isStale,
-          changeStream: null,
-        }
+    const collection = db.collection<T>(model.collection.name)
+    const filter: Filter<T> = {}
+    for (const key in identifier) {
+      if (schema.path(key)) {
+        filter[key as keyof Filter<T>] = identifier[key as keyof Identifier]
       }
     }
-
-    let documents: WithId<T>[]
-    if (itemId) {
-      const doc = await collection.findOne(fullFilter)
-      logger.debug('Single document fetched', { doc })
+    logger.debug('Find filter created', { filter })
+    let documents: T[]
+    if ('id' in identifier && schema.path('id')) {
+      const doc = (await collection.findOne(filter)) as T | null
       documents = doc ? [doc] : []
     } else {
-      documents = await collection.find(fullFilter).toArray()
-      logger.debug(`${documents.length} documents fetched`)
+      documents = (await collection.find(filter).toArray()) as T[]
     }
-
-    // Increment getHitCount for all retrieved documents
-    if (documents.length > 0) {
-      const bulkOps = documents.map(doc => ({
-        updateOne: {
-          filter: { _id: doc._id } as Filter<T>,
-          update: {
-            $inc: { getHitCount: 1 },
-            $set: { lastAccessed: new Date() },
-          } as unknown as UpdateFilter<T>,
-        },
-      }))
-      const bulkResult = await collection.bulkWrite(bulkOps)
-      logger.debug('Bulk write result', { bulkResult })
+    logger.debug(`${documents.length} document(s) fetched`)
+    if (
+      documents.length > 0 &&
+      schema.path('getHitCount') &&
+      schema.path('lastAccessed')
+    ) {
+      const storeName = model.collection.name
+      await Promise.all(
+        documents.map(async doc => {
+          const docId = doc._id as unknown as ObjectId
+          await ServerHitCountModule.incrementGetHitCount(
+            async (key: string) => {
+              const result = await db.collection('cache').findOne({ key })
+              return result ? result.value : null
+            },
+            async (key: string, value: string) => {
+              await db
+                .collection('cache')
+                .updateOne({ key }, { $set: { value } }, { upsert: true })
+            },
+            docId.toString(),
+            storeName
+          )
+          await ServerLastDateModule.updateLastAccessedDate(
+            async (key: string, value: string) => {
+              await db
+                .collection('cache')
+                .updateOne({ key }, { $set: { value } }, { upsert: true })
+            },
+            docId.toString(),
+            storeName
+          )
+        })
+      )
+      if ('id' in identifier && schema.path('id')) {
+        const updatedDoc = (await collection.findOne(filter)) as T | null
+        documents = updatedDoc ? [updatedDoc] : []
+      } else {
+        documents = (await collection.find(filter).toArray()) as T[]
+      }
     }
-
-    logger.debug(
-      `Fetched ${documents.length} document(s) for companyId: ${companyId}, userId: ${userId}`
-    )
-
-    const serializedDocuments = documents.map(doc =>
-      serializeDocument<T, S>(doc as unknown as GenericDocument<T>)
-    )
-
-    logger.debug('Documents serialized', {
-      count: serializedDocuments.length,
-      serializedDocuments,
+    const changeStream = collection.watch<T>([], {
+      fullDocument: 'updateLookup',
     })
-
-    let result: GenericSerializableData<S>[] | GenericSerializableData<S> | null
-    if (itemId) {
-      result = serializedDocuments.length > 0 ? serializedDocuments[0] : null
-    } else {
-      result = serializedDocuments
-    }
-
-    logger.debug('Final result', { result, resultType: typeof result })
-
-    // Set up change stream
-    if (onDataChange) {
-      changeStream = collection.watch(pipeline, {
-        fullDocument: 'updateLookup',
-      })
-      changeStream.on('change', async change => {
-        logger.debug('Change detected', { change })
-
-        // Fetch updated data
-        const updatedDocuments = await collection.find(fullFilter).toArray()
-        const updatedSerializedDocuments = updatedDocuments.map(doc =>
-          serializeDocument<T, S>(doc as unknown as GenericDocument<T>)
-        )
-
-        let updatedResult:
-          | GenericSerializableData<S>[]
-          | GenericSerializableData<S>
-          | null
-        if (itemId) {
-          updatedResult =
-            updatedSerializedDocuments.length > 0
-              ? updatedSerializedDocuments[0]
-              : null
-        } else {
-          updatedResult = updatedSerializedDocuments
-        }
-
-        onDataChange(updatedResult)
-      })
-
-      changeStream.on('error', error => {
-        logger.error('Change stream error', { error })
-      })
-    }
-
+    changeStream.on('change', change => {
+      logger.debug('Change detected', { change })
+    })
+    changeStream.on('error', error => {
+      logger.error('Change stream error', { error })
+    })
+    const result =
+      'id' in identifier && schema.path('id') ? documents[0] : documents
     return {
       data: result,
-      isStale,
       changeStream,
     }
   } catch (error) {
-    logger.error('Error in getFromMongo', {
-      error,
-      companyId,
-      userId,
-      mongoModelName,
-      itemId: itemId || 'all',
-      filter,
-    })
+    logger.error('Error in getFromMongo', { error, identifier, schema })
     throw error
   } finally {
     if (client) {
@@ -234,10 +125,16 @@ export async function getFromMongo<
       await closeConnections()
       logger.debug('MongoDB connections closed')
     }
-    if (changeStream) {
-      logger.debug('Closing change stream')
-      await changeStream.close()
-      logger.debug('Change stream closed')
-    }
   }
 }
+
+process.on(
+  'unhandledRejection',
+  async (reason: unknown, promise: Promise<unknown>) => {
+    await logger.debug('Unhandled Rejection at:', {
+      promise,
+      reason: reason instanceof Error ? reason.message : String(reason),
+      stack: reason instanceof Error ? reason.stack : undefined,
+    })
+  }
+)

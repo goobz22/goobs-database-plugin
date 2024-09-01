@@ -1,14 +1,18 @@
 'use server'
 import { createLogger, format, transports } from 'winston'
-import mongoose, { Schema, Document } from 'mongoose'
-import { ChangeStream } from 'mongodb'
-import ConnectDb, { closeConnections } from './connectDb'
+import mongoose, { Schema, Model, Document } from 'mongoose'
 import {
-  GenericDocument,
-  GenericSerializableData,
-  BaseSerializableData,
-  serializeDocument,
-} from './types'
+  ChangeStream,
+  ObjectId,
+  Filter,
+  UpdateFilter,
+  FindOneAndUpdateOptions,
+  WithId,
+} from 'mongodb'
+import ConnectDb, { closeConnections } from './utils/connectDb'
+import { Identifier } from './types'
+import ServerSetHitCountModule from './utils/update/hitCount.server'
+import ServerLastUpdatedDateModule from './utils/update/lastUpdatedDate.server'
 
 const logger = createLogger({
   level: 'debug',
@@ -34,24 +38,17 @@ const logger = createLogger({
   ],
 })
 
-export async function updateItemInMongo<
-  T extends Document,
-  S extends BaseSerializableData,
->(
-  companyId: string,
-  userId: string,
-  mongoModelName: string,
-  schema: Schema,
+export async function updateItemInMongo<T extends Document>(
+  identifier: Identifier,
+  schema: Schema<T>,
+  model: Model<T>,
   itemData: Partial<T> & { _id?: string },
   validateFields: (data: Partial<T>) => void,
-  onChangeCallback?: (change: unknown) => void,
   pipeline: Record<string, unknown>[] = []
-): Promise<GenericSerializableData<S>> {
-  logger.info('Starting updateItemInMongo', {
-    companyId,
-    userId,
-    mongoModelName,
-    schemaName: schema.obj.constructor.name,
+): Promise<WithId<T> | null> {
+  logger.debug('Starting updateItemInMongo', {
+    identifier,
+    schemaName: schema.constructor.name,
   })
   logger.debug('Item data received', {
     itemData,
@@ -69,28 +66,27 @@ export async function updateItemInMongo<
       connectionType: 'update',
     })
 
-    logger.debug('Creating Mongoose model', {
-      mongoModelName,
-      schemaName: schema.obj.constructor.name,
-    })
-    const Model = connection.model<GenericDocument<T>>(mongoModelName, schema)
-    logger.debug('Mongoose model created', {
-      mongoModelName,
-      schemaName: schema.obj.constructor.name,
-    })
-
-    if (onChangeCallback) {
-      logger.debug('Setting up change stream', { mongoModelName })
-      changeStream = Model.watch(pipeline, { fullDocument: 'updateLookup' })
-      changeStream.on('change', async change => {
-        logger.debug('Change detected', { change })
-        onChangeCallback(change)
-      })
-      changeStream.on('error', error => {
-        logger.error('Change stream error', { error })
-      })
-      logger.debug('Change stream set up', { mongoModelName })
+    if (!connection) {
+      throw new Error('Failed to establish MongoDB connection')
     }
+
+    const collection = connection.db.collection<T>(model.collection.name)
+
+    logger.debug('Setting up change stream', {
+      collectionName: model.collection.name,
+    })
+    changeStream = collection.watch<T>(pipeline, {
+      fullDocument: 'updateLookup',
+    })
+    changeStream.on('change', change => {
+      logger.debug('Change detected', { change })
+    })
+    changeStream.on('error', error => {
+      logger.error('Change stream error', { error })
+    })
+    logger.debug('Change stream set up', {
+      collectionName: model.collection.name,
+    })
 
     logger.debug('Validating required fields', {
       itemDataKeys: Object.keys(itemData),
@@ -100,52 +96,51 @@ export async function updateItemInMongo<
       itemDataKeys: Object.keys(itemData),
     })
 
-    const filter = itemData._id
-      ? {
-          _id: new mongoose.Types.ObjectId(itemData._id),
-          company: new mongoose.Types.ObjectId(companyId),
-          user: new mongoose.Types.ObjectId(userId),
-        }
-      : {
-          company: new mongoose.Types.ObjectId(companyId),
-          user: new mongoose.Types.ObjectId(userId),
-        }
+    const filter: Filter<T> = {}
+    Object.assign(filter, { company: new ObjectId(identifier.companyId) })
+    if ('id' in identifier) {
+      Object.assign(filter, { _id: new ObjectId(identifier.id) })
+    } else if (itemData._id) {
+      Object.assign(filter, { _id: new ObjectId(itemData._id) })
+    }
     logger.debug('Filter created', {
       filter,
       filterKeys: Object.keys(filter),
     })
 
-    const update = {
+    const update: UpdateFilter<T> = {
       $set: {
         ...itemData,
-        company: new mongoose.Types.ObjectId(companyId),
-        user: new mongoose.Types.ObjectId(userId),
+        company: new ObjectId(identifier.companyId),
         updatedAt: new Date(),
         lastAccessed: new Date(),
-      },
+      } as Partial<T>,
     }
     logger.debug('Update object created', {
       update,
-      updateKeys: Object.keys(update.$set),
+      updateKeys: Object.keys(update.$set || {}),
     })
 
-    const options = {
-      new: true,
+    const options: FindOneAndUpdateOptions = {
+      returnDocument: 'after',
       upsert: true,
-      runValidators: true,
     }
 
-    logger.debug('Calling Model.findOneAndUpdate with filter and update', {
+    logger.debug('Calling findOneAndUpdate with filter and update', {
       filter,
       filterKeys: Object.keys(filter),
       update,
-      updateKeys: Object.keys(update.$set),
+      updateKeys: Object.keys(update.$set || {}),
       options,
     })
-    const updatedDoc = await Model.findOneAndUpdate(filter, update, options)
+    const updatedDoc = await collection.findOneAndUpdate(
+      filter,
+      update,
+      options
+    )
     logger.debug('findOneAndUpdate operation completed', {
       updatedDoc,
-      updatedDocKeys: updatedDoc ? Object.keys(updatedDoc.toObject()) : [],
+      updatedDocKeys: updatedDoc ? Object.keys(updatedDoc) : [],
     })
 
     if (!updatedDoc) {
@@ -155,26 +150,52 @@ export async function updateItemInMongo<
     }
 
     logger.debug('Document updated successfully', {
-      updatedDoc,
-      updatedDocKeys: Object.keys(updatedDoc.toObject()),
+      updatedDoc: updatedDoc,
+      updatedDocKeys: Object.keys(updatedDoc),
     })
 
-    logger.debug('Incrementing setHitCount for updated document', {
+    logger.debug('Updating hit counts and last updated date', {
       _id: updatedDoc._id,
     })
-    await Model.updateOne({ _id: updatedDoc._id }, { $inc: { setHitCount: 1 } })
-    logger.debug('setHitCount incremented successfully', {
+    await ServerSetHitCountModule.incrementSetHitCount(
+      async (key: string) => {
+        if (!connection) throw new Error('MongoDB connection is null')
+        const result = await connection.db.collection('cache').findOne({ key })
+        return result ? (result.value as string | null) : null
+      },
+      async (key: string, value: string) => {
+        if (!connection) throw new Error('MongoDB connection is null')
+        await connection.db
+          .collection('cache')
+          .updateOne({ key }, { $set: { value } }, { upsert: true })
+      },
+      updatedDoc._id.toString(),
+      model.collection.name
+    )
+    await ServerLastUpdatedDateModule.updateLastUpdatedDate(
+      async (key: string, value: string) => {
+        if (!connection) throw new Error('MongoDB connection is null')
+        await connection.db
+          .collection('cache')
+          .updateOne({ key }, { $set: { value } }, { upsert: true })
+      },
+      updatedDoc._id.toString(),
+      model.collection.name
+    )
+    logger.debug('Hit counts and last updated date updated successfully', {
       _id: updatedDoc._id,
     })
 
     logger.debug('Verifying updated document in the database', {
       _id: updatedDoc._id,
     })
-    const verifiedDoc = await Model.findById(updatedDoc._id)
+    const verifiedDoc = await collection.findOne({
+      _id: updatedDoc._id,
+    } as Filter<T>)
     logger.debug('Final verification', {
       exists: !!verifiedDoc,
       verifiedDoc,
-      verifiedDocKeys: verifiedDoc ? Object.keys(verifiedDoc.toObject()) : [],
+      verifiedDocKeys: verifiedDoc ? Object.keys(verifiedDoc) : [],
     })
 
     if (!verifiedDoc) {
@@ -185,25 +206,18 @@ export async function updateItemInMongo<
       throw new Error(errorMessage)
     }
 
-    logger.debug('Serializing updated document', {
-      verifiedDoc,
-      verifiedDocKeys: Object.keys(verifiedDoc.toObject()),
-    })
-    const serializedDoc = serializeDocument<T, S>(verifiedDoc)
     logger.info('Update successful', {
-      serializedDoc,
-      serializedDocKeys: Object.keys(serializedDoc),
+      verifiedDoc,
+      verifiedDocKeys: Object.keys(verifiedDoc),
     })
 
-    return serializedDoc
+    return verifiedDoc
   } catch (error) {
     logger.error('Error in updateItemInMongo', {
       error: error instanceof Error ? error.message : 'Unknown error',
       stack: error instanceof Error ? error.stack : 'No stack trace available',
-      companyId,
-      userId,
-      mongoModelName,
-      schemaName: schema.obj.constructor.name,
+      identifier,
+      schemaName: schema.constructor.name,
       itemDataKeys: Object.keys(itemData),
     })
     if (error instanceof Error) {
@@ -213,9 +227,13 @@ export async function updateItemInMongo<
     }
   } finally {
     if (changeStream) {
-      logger.debug('Closing change stream', { mongoModelName })
+      logger.debug('Closing change stream', {
+        collectionName: model.collection.name,
+      })
       await changeStream.close()
-      logger.debug('Change stream closed', { mongoModelName })
+      logger.debug('Change stream closed', {
+        collectionName: model.collection.name,
+      })
     }
     if (connection) {
       logger.debug('Closing MongoDB connections', {
@@ -227,10 +245,8 @@ export async function updateItemInMongo<
       })
     }
     logger.debug('Exiting updateItemInMongo', {
-      companyId,
-      userId,
-      mongoModelName,
-      schemaName: schema.obj.constructor.name,
+      identifier,
+      schemaName: schema.constructor.name,
       itemDataKeys: Object.keys(itemData),
     })
   }
