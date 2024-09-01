@@ -79,34 +79,26 @@ async function connectMongoose(): Promise<mongoose.Connection> {
 
 async function setupChangeStream(
   collectionName: string,
-  pipeline: object[] = [],
-  onChangeCallback: (change: unknown) => void
+  pipeline: object[] = []
 ): Promise<ChangeStream> {
   if (!mongoClient) {
     await connectMongoDB()
   }
-
   if (!mongoClient) {
     throw new Error('Failed to connect to MongoDB')
   }
-
   const db = mongoClient.db()
   const collection = db.collection(collectionName)
-
   changeStream = collection.watch(pipeline)
-
   changeStream.on('change', change => {
     logger.info(`Change detected in collection ${collectionName}:`, change)
-    onChangeCallback(change)
   })
-
   changeStream.on('error', error => {
     logger.error(
       `Error in change stream for collection ${collectionName}:`,
       error
     )
   })
-
   logger.info(`Change stream set up for collection ${collectionName}`)
   return changeStream
 }
