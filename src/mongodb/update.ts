@@ -1,4 +1,5 @@
 'use server'
+
 import { createLogger, format, transports } from 'winston'
 import mongoose, { Schema, Model, Document } from 'mongoose'
 import {
@@ -66,7 +67,7 @@ export async function updateItemInMongo<T extends Document>(
       connectionType: 'update',
     })
 
-    if (!connection) {
+    if (!connection || !connection.db) {
       throw new Error('Failed to establish MongoDB connection')
     }
 
@@ -97,7 +98,9 @@ export async function updateItemInMongo<T extends Document>(
     })
 
     const filter: Filter<T> = {}
-    Object.assign(filter, { company: new ObjectId(identifier.companyId) })
+    if ('companyId' in identifier) {
+      Object.assign(filter, { company: new ObjectId(identifier.companyId) })
+    }
     if ('id' in identifier) {
       Object.assign(filter, { _id: new ObjectId(identifier.id) })
     } else if (itemData._id) {
@@ -111,14 +114,18 @@ export async function updateItemInMongo<T extends Document>(
     const update: UpdateFilter<T> = {
       $set: {
         ...itemData,
-        company: new ObjectId(identifier.companyId),
         updatedAt: new Date(),
         lastAccessed: new Date(),
       } as Partial<T>,
     }
+    if ('companyId' in identifier) {
+      ;(update.$set as { company?: ObjectId }).company = new ObjectId(
+        identifier.companyId
+      )
+    }
     logger.debug('Update object created', {
       update,
-      updateKeys: Object.keys(update.$set || {}),
+      updateKeys: update.$set ? Object.keys(update.$set) : [],
     })
 
     const options: FindOneAndUpdateOptions = {
@@ -130,7 +137,7 @@ export async function updateItemInMongo<T extends Document>(
       filter,
       filterKeys: Object.keys(filter),
       update,
-      updateKeys: Object.keys(update.$set || {}),
+      updateKeys: update.$set ? Object.keys(update.$set) : [],
       options,
     })
     const updatedDoc = await collection.findOneAndUpdate(
@@ -159,12 +166,14 @@ export async function updateItemInMongo<T extends Document>(
     })
     await ServerSetHitCountModule.incrementSetHitCount(
       async (key: string) => {
-        if (!connection) throw new Error('MongoDB connection is null')
+        if (!connection || !connection.db)
+          throw new Error('MongoDB connection is null or undefined')
         const result = await connection.db.collection('cache').findOne({ key })
         return result ? (result.value as string | null) : null
       },
       async (key: string, value: string) => {
-        if (!connection) throw new Error('MongoDB connection is null')
+        if (!connection || !connection.db)
+          throw new Error('MongoDB connection is null or undefined')
         await connection.db
           .collection('cache')
           .updateOne({ key }, { $set: { value } }, { upsert: true })
@@ -174,7 +183,8 @@ export async function updateItemInMongo<T extends Document>(
     )
     await ServerLastUpdatedDateModule.updateLastUpdatedDate(
       async (key: string, value: string) => {
-        if (!connection) throw new Error('MongoDB connection is null')
+        if (!connection || !connection.db)
+          throw new Error('MongoDB connection is null or undefined')
         await connection.db
           .collection('cache')
           .updateOne({ key }, { $set: { value } }, { upsert: true })
