@@ -21,8 +21,30 @@ export type CompanyAndCustomerAndIdIdentifier = {
   id: string
 }
 
+export type CompanyAndCustomerAndIdandAdditionalIdentifier = {
+  companyId: string
+  customerId: string
+  id: string
+} & {
+  [key: string]: string | number | boolean
+}
+
+export type CompanyAndIdandAdditionalIdentifier = {
+  companyId: string
+  id: string
+} & {
+  [key: string]: string | number | boolean
+}
+
+export type IdIdentifier = {
+  id: string
+}
+
 export type Identifier =
   | CompanyIdentifier
   | CompanyAndCustomerIdentifier
   | CompanyAndIdIdentifier
   | CompanyAndCustomerAndIdIdentifier
+  | CompanyAndCustomerAndIdandAdditionalIdentifier
+  | CompanyAndIdandAdditionalIdentifier
+  | IdIdentifier
