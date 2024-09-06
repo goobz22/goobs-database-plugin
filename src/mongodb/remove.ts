@@ -1,4 +1,5 @@
 'use server'
+
 import { createLogger, format, transports } from 'winston'
 import mongoose, { Schema, Model, Document } from 'mongoose'
 import { ChangeStream, ObjectId } from 'mongodb'
@@ -45,6 +46,7 @@ export const removeFromMongo = async <T extends Document>(
 
   let connection: mongoose.Connection | null = null
   let changeStream: ChangeStream | null = null
+
   try {
     logger.debug('Calling ConnectDb to establish MongoDB connection', {
       connectionType: 'update',
@@ -58,8 +60,10 @@ export const removeFromMongo = async <T extends Document>(
     changeStream = await setupChangeStream(model.collection.name, [])
     logger.debug('Change stream set up', { modelName: model.modelName })
 
-    const filter: Record<string, ObjectId> = {
-      company: new ObjectId(identifier.companyId),
+    const filter: Record<string, ObjectId> = {}
+
+    if ('companyId' in identifier) {
+      filter.company = new ObjectId(identifier.companyId)
     }
 
     if ('id' in identifier) {
