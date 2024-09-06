@@ -8,10 +8,30 @@ import { removeFromMongo } from './remove'
 import { updateItemInMongo } from './update'
 
 // Importing from types.ts
-import type { ChangeStreamOperationType, Identifier } from './types'
+import type {
+  ChangeStreamOperationType,
+  Identifier,
+  CompanyAndIdandAdditionalIdentifier,
+  CompanyAndCustomerAndIdIdentifier,
+  CompanyAndCustomerAndIdandAdditionalIdentifier,
+  CompanyAndCustomerIdentifier,
+  CompanyIdentifier,
+  CompanyAndIdIdentifier,
+  IdIdentifier,
+} from './types'
 
 // Exporting all imported items
 export { getFromMongo, removeFromMongo, updateItemInMongo }
 
 // Exporting types
-export type { ChangeStreamOperationType, Identifier }
+export type {
+  ChangeStreamOperationType,
+  Identifier,
+  CompanyAndIdandAdditionalIdentifier,
+  CompanyAndCustomerAndIdIdentifier,
+  CompanyAndCustomerAndIdandAdditionalIdentifier,
+  CompanyAndCustomerIdentifier,
+  CompanyIdentifier,
+  CompanyAndIdIdentifier,
+  IdIdentifier,
+}
