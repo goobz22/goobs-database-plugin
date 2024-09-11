@@ -1,12 +1,3 @@
-// Importing from get.ts
-import { getFromMongo } from './get'
-
-// Importing from remove.ts
-import { removeFromMongo } from './remove'
-
-// Importing from update.ts
-import { updateItemInMongo } from './update'
-
 // Importing from types.ts
 import type {
   ChangeStreamOperationType,
@@ -25,8 +16,11 @@ import ServerGetLastAccessedDateModule from './utils/get/lastAccessedDate.server
 import ServerSetHitCountModule from './utils/update/hitCount.server'
 import ServerLastUpdatedDateModule from './utils/update/lastUpdatedDate.server'
 
+// Importing from connectDb.ts
+import ConnectDb, { closeConnections } from './utils/connectDb'
+
 // Exporting all imported items
-export { getFromMongo, removeFromMongo, updateItemInMongo }
+export { ConnectDb, closeConnections }
 
 // Exporting types
 export type {
