@@ -25,15 +25,13 @@ export type CompanyAndCustomerAndIdandAdditionalIdentifier = {
   companyId: string
   customerId: string
   id: string
-} & {
-  [key: string]: string | number | boolean
+  additionalIdentifier: string
 }
 
 export type CompanyAndIdandAdditionalIdentifier = {
   companyId: string
   id: string
-} & {
-  [key: string]: string | number | boolean
+  additionalIdentifier: string
 }
 
 export type IdIdentifier = {

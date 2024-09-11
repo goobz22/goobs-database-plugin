@@ -20,6 +20,11 @@ import type {
   IdIdentifier,
 } from './types'
 
+import ServerGetHitCountModule from './utils/get/hitCount.server'
+import ServerGetLastAccessedDateModule from './utils/get/lastAccessedDate.server'
+import ServerSetHitCountModule from './utils/update/hitCount.server'
+import ServerLastUpdatedDateModule from './utils/update/lastUpdatedDate.server'
+
 // Exporting all imported items
 export { getFromMongo, removeFromMongo, updateItemInMongo }
 
@@ -34,4 +39,11 @@ export type {
   CompanyIdentifier,
   CompanyAndIdIdentifier,
   IdIdentifier,
+}
+
+export {
+  ServerGetHitCountModule,
+  ServerGetLastAccessedDateModule,
+  ServerSetHitCountModule,
+  ServerLastUpdatedDateModule,
 }
