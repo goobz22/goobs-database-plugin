@@ -1,41 +1,43 @@
+import { ObjectId } from 'mongodb'
+
 // Change stream types
 export type ChangeStreamOperationType = 'update' | 'get' | 'remove'
 
 export type CompanyIdentifier = {
-  companyId: string
+  companyId: ObjectId
 }
 
 export type CompanyAndCustomerIdentifier = {
-  companyId: string
-  customerId: string
+  companyId: ObjectId
+  customerId: ObjectId
 }
 
 export type CompanyAndIdIdentifier = {
-  companyId: string
-  id: string
+  companyId: ObjectId
+  id: ObjectId
 }
 
 export type CompanyAndCustomerAndIdIdentifier = {
-  companyId: string
-  customerId: string
-  id: string
+  companyId: ObjectId
+  customerId: ObjectId
+  id: ObjectId
 }
 
 export type CompanyAndCustomerAndIdandAdditionalIdentifier = {
-  companyId: string
-  customerId: string
-  id: string
+  companyId: ObjectId
+  customerId: ObjectId
+  id: ObjectId
   additionalIdentifier: string
 }
 
 export type CompanyAndIdandAdditionalIdentifier = {
-  companyId: string
-  id: string
+  companyId: ObjectId
+  id: ObjectId
   additionalIdentifier: string
 }
 
 export type IdIdentifier = {
-  id: string
+  id: ObjectId
 }
 
 export type Identifier =
