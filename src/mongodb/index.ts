@@ -8,6 +8,9 @@ import type {
   CompanyAndCustomerIdentifier,
   CompanyIdentifier,
   CompanyAndIdIdentifier,
+  AuthEmailAndCompanyIdentifier,
+  AuthEmailAndCompanyAndCustomerIdentifier,
+  AuthEmailIdentifier,
   IdIdentifier,
 } from './types'
 
@@ -33,6 +36,9 @@ export type {
   CompanyIdentifier,
   CompanyAndIdIdentifier,
   IdIdentifier,
+  AuthEmailAndCompanyIdentifier,
+  AuthEmailAndCompanyAndCustomerIdentifier,
+  AuthEmailIdentifier,
 }
 
 export {

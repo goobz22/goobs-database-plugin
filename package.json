@@ -1,6 +1,6 @@
 {
   "name": "goobs-database-plugin",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "A flexible and extensible multi-database plugin for TypeScript projects, initially featuring MongoDB support. This plugin offers generic CRUD operations with company and user segregation, type-safe document handling, automatic metadata tracking, and built-in connection management. Designed for scalability, it provides a foundation for adding support for multiple database types in the future, making it ideal for projects that may need to work with various databases or switch between them seamlessly.",
   "main": "src/index.ts",
   "types": "src/index.ts",
@@ -26,8 +26,8 @@
     "winston": "^3.14.2"
   },
   "devDependencies": {
-    "@typescript-eslint/eslint-plugin": "^8.4.0",
-    "@typescript-eslint/parser": "^8.4.0",
+    "@typescript-eslint/eslint-plugin": "^8.5.0",
+    "@typescript-eslint/parser": "^8.5.0",
     "cross-env": "^7.0.3",
     "eslint": "^9.9.1",
     "eslint-config-prettier": "^9.1.0",
@@ -39,7 +39,7 @@
     "prettier": "^3.3.3",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "typescript": "^5.5.4"
+    "typescript": "^5.6.2"
   },
   "files": [
     "src"

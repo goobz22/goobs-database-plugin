@@ -27,17 +27,32 @@ export type CompanyAndCustomerAndIdandAdditionalIdentifier = {
   companyId: ObjectId
   customerId: ObjectId
   id: ObjectId
-  additionalIdentifier: string
+  additionalIdentifier: ObjectId
 }
 
 export type CompanyAndIdandAdditionalIdentifier = {
   companyId: ObjectId
   id: ObjectId
-  additionalIdentifier: string
+  additionalIdentifier: ObjectId
 }
 
 export type IdIdentifier = {
   id: ObjectId
+}
+
+export type AuthEmailAndCompanyIdentifier = {
+  authEmail: ObjectId
+  companyId: ObjectId
+}
+
+export type AuthEmailAndCompanyAndCustomerIdentifier = {
+  authEmail: ObjectId
+  companyId: ObjectId
+  customerId: ObjectId
+}
+
+export type AuthEmailIdentifier = {
+  authEmail: ObjectId
 }
 
 export type Identifier =
@@ -48,3 +63,6 @@ export type Identifier =
   | CompanyAndCustomerAndIdandAdditionalIdentifier
   | CompanyAndIdandAdditionalIdentifier
   | IdIdentifier
+  | AuthEmailAndCompanyIdentifier
+  | AuthEmailAndCompanyAndCustomerIdentifier
+  | AuthEmailIdentifier
